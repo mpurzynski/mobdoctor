@@ -8,9 +8,9 @@ def do_check(state):
     :return: state: Why not
     """
 
-    #plugin_enabled = False
-    #if not plugin_enabled:
-    #    return False
+    plugin_enabled = False
+    if not plugin_enabled:
+        return False
 
     print('jo sem drugi plugin!!')
 
@@ -19,4 +19,4 @@ def do_check(state):
 
 
 def reserved(state):
-    print('i cos fandzole bez sensu')
+    return
