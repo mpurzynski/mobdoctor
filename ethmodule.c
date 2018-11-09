@@ -26,10 +26,12 @@ static PyObject * eth_stat(PyObject *self, PyObject *args)
     struct ethtool_stats *stats = NULL;
     struct ethtool_value values;
     struct ethtool_ringparam ringinfo;
+    struct ethtool_pauseparam pauseinfo;
+    struct ethtool_channels queuesinfo;
     struct ifreq ifr;
-    uint32_t eth_num_cmds = 6;
-    int offload_cmds[] = {ETHTOOL_GTSO, ETHTOOL_GUFO, ETHTOOL_GGSO, ETHTOOL_GGRO, ETHTOOL_GSG, ETHTOOL_GRXCSUM};
-    char * offload_names[] = {"tso", "ufo", "gso", "gro", "sg", "checksum"};
+    uint32_t eth_num_cmds = 7;
+    int offload_cmds[] = {ETHTOOL_GTSO, ETHTOOL_GUFO, ETHTOOL_GGSO, ETHTOOL_GGRO, ETHTOOL_GSG, ETHTOOL_GRXCSUM, ETHTOOL_GLINK};
+    char * offload_names[] = {"tso", "ufo", "gso", "gro", "sg", "checksum", "link"};
 
     if (!PyArg_ParseTuple(args, "s", &ifname))
     	return NULL;
@@ -81,14 +83,63 @@ static PyObject * eth_stat(PyObject *self, PyObject *args)
         PyDict_SetItem(d, k, v);
     }
 
+    values.cmd = ETHTOOL_GFLAGS;
+    ifr.ifr_data = (caddr_t) &values;
+    ioctl(skfd, SIOCETHTOOL, &ifr);
+    PyObject * k = PyUnicode_FromString("lro");
+    PyObject * v = PyLong_FromUnsignedLongLong(0);
+    if (values.data & ETH_FLAG_LRO)
+    {
+        v = PyLong_FromUnsignedLongLong(1);
+    }
+    PyDict_SetItem(d, k, v);
+
     ringinfo.cmd = ETHTOOL_GRINGPARAM;
     ifr.ifr_data = (caddr_t) &ringinfo;
     ioctl(skfd, SIOCETHTOOL, &ifr);
-    PyObject *k = PyUnicode_FromString("rx_max_pending");
-    PyObject *v = PyLong_FromUnsignedLongLong(ringinfo.rx_max_pending);
+    k = PyUnicode_FromString("rx_max_pending");
+    v = PyLong_FromUnsignedLongLong(ringinfo.rx_max_pending);
     PyDict_SetItem(d, k, v);
     k = PyUnicode_FromString("rx_pending");
     v = PyLong_FromUnsignedLongLong(ringinfo.rx_pending);
+    PyDict_SetItem(d, k, v);
+
+    pauseinfo.cmd = ETHTOOL_GPAUSEPARAM;
+    ifr.ifr_data = (caddr_t) &pauseinfo;
+    ioctl(skfd, SIOCETHTOOL, &ifr);
+    k = PyUnicode_FromString("rx_pause");
+    v = PyLong_FromUnsignedLongLong(pauseinfo.rx_pause);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("tx_pause");
+    v = PyLong_FromUnsignedLongLong(pauseinfo.tx_pause);
+    PyDict_SetItem(d, k, v);
+
+    queuesinfo.cmd = ETHTOOL_GCHANNELS;
+    ifr.ifr_data = (caddr_t) &queuesinfo;
+    ioctl(skfd, SIOCETHTOOL, &ifr);
+    k = PyUnicode_FromString("queues_max_rx");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.max_rx);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_max_tx");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.max_tx);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_max_other");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.max_other);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_max_combined");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.max_combined);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_current_rx");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.rx_count);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_current_tx");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.tx_count);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_current_other");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.other_count);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("queues_current_combined");
+    v = PyLong_FromUnsignedLongLong(queuesinfo.combined_count);
     PyDict_SetItem(d, k, v);
     
     for (i = 0; i < n_stats; i++) {
