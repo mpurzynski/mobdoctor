@@ -16,20 +16,23 @@
 static PyObject * eth_stat(PyObject *self, PyObject *args)
 {
     uint32_t i = 0;
-    uint32_t skfd = 0;
+    uint32_t skfd;
     uint32_t n_stats = 0;
-    uint64_t sz_stats = 0;
-    uint64_t sz_str = 0;
-    char * ifname = NULL;
+    uint64_t sz_str;
+    uint64_t sz_stats;
+    char * ifname;
+    struct ethtool_drvinfo drvinfo;
     struct ethtool_gstrings *strings = NULL;
     struct ethtool_stats *stats = NULL;
-    struct ethtool_drvinfo drvinfo;
+    struct ethtool_value values;
+    struct ethtool_ringparam ringinfo;
     struct ifreq ifr;
+    uint32_t eth_num_cmds = 6;
+    int offload_cmds[] = {ETHTOOL_GTSO, ETHTOOL_GUFO, ETHTOOL_GGSO, ETHTOOL_GGRO, ETHTOOL_GSG, ETHTOOL_GRXCSUM};
+    char * offload_names[] = {"tso", "ufo", "gso", "gro", "sg", "checksum"};
 
     if (!PyArg_ParseTuple(args, "s", &ifname))
-    {
     	return NULL;
-    }
 
     // Any socket will do
     if (( skfd = socket( AF_INET, SOCK_DGRAM, 0 ) ) < 0 )
@@ -37,15 +40,13 @@ static PyObject * eth_stat(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    // FIXME - exception handling
     memset(&ifr, 0, sizeof(ifr));
-    // FIXME - exception handling
     strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name)-1);
 
     drvinfo.cmd = ETHTOOL_GDRVINFO;
     ifr.ifr_data = (caddr_t) &drvinfo;
                                                                                 
-    if (ioctl(skfd, SIOCETHTOOL, &ifr) < 0)
+    if (ioctl(skfd, SIOCETHTOOL, &ifr) == -1)
     {
         return NULL;
     }
@@ -54,46 +55,49 @@ static PyObject * eth_stat(PyObject *self, PyObject *args)
     // allocate memory for stat names and values
     sz_str = n_stats * ETH_GSTRING_LEN;
     sz_stats = n_stats * sizeof(uint64_t);
-    // FIXME - exception handling
     strings = calloc(1, sz_str + sizeof(struct ethtool_gstrings));
-    // FIXME - exception handling
     stats = calloc(1, sz_stats + sizeof(struct ethtool_stats));
 
     strings->cmd = ETHTOOL_GSTRINGS;
     strings->string_set = ETH_SS_STATS;
     strings->len = n_stats;
     ifr.ifr_data = (caddr_t) strings;
-    if (ioctl(skfd, SIOCETHTOOL, &ifr) < 0)
-    {
-        return NULL;
-    }
+    ioctl(skfd, SIOCETHTOOL, &ifr);
 
     stats->cmd = ETHTOOL_GSTATS;
     stats->n_stats = n_stats;
     ifr.ifr_data = (caddr_t) stats;
-    if (ioctl(skfd, SIOCETHTOOL, &ifr) < 0)
-    {
-        return NULL;
-    }
-
-    /*for (i = 0; i < n_stats; i++) {
-        printf("%s\t%i\n", (char *)&strings->data[i * ETH_GSTRING_LEN], stats->data[i]);
-    }*/
-
-    close(skfd);
+    ioctl(skfd, SIOCETHTOOL, &ifr);
 
     PyObject *d = PyDict_New();
+
+    for (i = 0; i < eth_num_cmds; i++) {
+        values.cmd = offload_cmds[i];
+	ifr.ifr_data = (caddr_t) &values;
+	ioctl(skfd, SIOCETHTOOL, &ifr);
+
+        PyObject *k = PyUnicode_FromString(offload_names[i]);
+        PyObject *v = PyLong_FromUnsignedLongLong(values.data);
+        PyDict_SetItem(d, k, v);
+    }
+
+    ringinfo.cmd = ETHTOOL_GRINGPARAM;
+    ifr.ifr_data = (caddr_t) &ringinfo;
+    ioctl(skfd, SIOCETHTOOL, &ifr);
+    PyObject *k = PyUnicode_FromString("rx_max_pending");
+    PyObject *v = PyLong_FromUnsignedLongLong(ringinfo.rx_max_pending);
+    PyDict_SetItem(d, k, v);
+    k = PyUnicode_FromString("rx_pending");
+    v = PyLong_FromUnsignedLongLong(ringinfo.rx_pending);
+    PyDict_SetItem(d, k, v);
+    
     for (i = 0; i < n_stats; i++) {
     	PyObject *k = PyUnicode_FromString((char *)&strings->data[i * ETH_GSTRING_LEN]);
     	PyObject *v = PyLong_FromUnsignedLongLong(stats->data[i]);
     	PyDict_SetItem(d, k, v);
     }
 
-    /*PyObject *d = PyDict_New();
-    PyObject *k = PyUnicode_FromString("counters");
-    PyObject *v = PyLong_FromUnsignedLongLong(n_stats);
-    PyDict_SetItem(d, k, v);*/
-    // return Py_BuildValue("i", n_stats);
+    close(skfd);
 
     return d;
 }
