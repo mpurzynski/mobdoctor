@@ -13,14 +13,37 @@
 #include <linux/sockios.h>
 #include <stdint.h>
 
+static PyObject * send_cmd(char *data, char *ifname)
+{
+    uint32_t skfd = 0;
+    struct ifreq ifr;
+
+    if (( skfd = socket( AF_INET, SOCK_DGRAM, 0 ) ) < 0 )
+    {
+        return PyErr_SetFromErrno(PyExc_OSError);
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name)-1);
+    ifr.ifr_data = data;
+    
+    if (ioctl(skfd, SIOCETHTOOL, &ifr) < 0)
+    {
+        PyErr_SetFromErrno(PyExc_IOError);
+        close(skfd);
+        return NULL;
+    }
+}
+
 static PyObject * eth_stat(PyObject *self, PyObject *args)
 {
     uint32_t i = 0;
+    uint32_t err = 0;
     uint32_t skfd;
     uint32_t n_stats = 0;
     uint64_t sz_str;
     uint64_t sz_stats;
-    char * ifname;
+    char *ifname;
     struct ethtool_drvinfo drvinfo;
     struct ethtool_gstrings *strings = NULL;
     struct ethtool_stats *stats = NULL;
@@ -29,65 +52,70 @@ static PyObject * eth_stat(PyObject *self, PyObject *args)
     struct ethtool_pauseparam pauseinfo;
     struct ethtool_channels queuesinfo;
     struct ifreq ifr;
+    char *data = NULL;
     uint32_t eth_num_cmds = 7;
     int offload_cmds[] = {ETHTOOL_GTSO, ETHTOOL_GUFO, ETHTOOL_GGSO, ETHTOOL_GGRO, ETHTOOL_GSG, ETHTOOL_GRXCSUM, ETHTOOL_GLINK};
-    char * offload_names[] = {"tso", "ufo", "gso", "gro", "sg", "checksum", "link"};
+    char *offload_names[] = {"tso", "ufo", "gso", "gro", "sg", "checksum", "link"};
+    PyObject *k = NULL;
+    PyObject *v = NULL;
 
     if (!PyArg_ParseTuple(args, "s", &ifname))
     	return NULL;
+    
+    PyObject *d = PyDict_New();
 
     // Any socket will do
     if (( skfd = socket( AF_INET, SOCK_DGRAM, 0 ) ) < 0 )
     {
-        return NULL;
+        return PyErr_SetFromErrno(PyExc_OSError);
     }
 
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name)-1);
 
     drvinfo.cmd = ETHTOOL_GDRVINFO;
-    ifr.ifr_data = (caddr_t) &drvinfo;
-                                                                                
-    if (ioctl(skfd, SIOCETHTOOL, &ifr) == -1)
-    {
-        return NULL;
-    }
-    n_stats = drvinfo.n_stats;
+    data = (caddr_t) &drvinfo;
+    send_cmd(data, ifname);
 
-    // allocate memory for stat names and values
+    n_stats = drvinfo.n_stats;
     sz_str = n_stats * ETH_GSTRING_LEN;
     sz_stats = n_stats * sizeof(uint64_t);
+    // FIXME exception handling - return python no memory
     strings = calloc(1, sz_str + sizeof(struct ethtool_gstrings));
     stats = calloc(1, sz_stats + sizeof(struct ethtool_stats));
 
     strings->cmd = ETHTOOL_GSTRINGS;
     strings->string_set = ETH_SS_STATS;
     strings->len = n_stats;
-    ifr.ifr_data = (caddr_t) strings;
-    ioctl(skfd, SIOCETHTOOL, &ifr);
+    data = (caddr_t) strings;
+    send_cmd(data, ifname);
 
     stats->cmd = ETHTOOL_GSTATS;
     stats->n_stats = n_stats;
-    ifr.ifr_data = (caddr_t) stats;
-    ioctl(skfd, SIOCETHTOOL, &ifr);
+    data = (caddr_t) stats;
+    send_cmd(data, ifname);
 
-    PyObject *d = PyDict_New();
+    for (i = 0; i < n_stats; i++) {
+    	k = PyUnicode_FromString((char *)&strings->data[i * ETH_GSTRING_LEN]);
+    	v = PyLong_FromUnsignedLongLong(stats->data[i]);
+    	PyDict_SetItem(d, k, v);
+    }
 
     for (i = 0; i < eth_num_cmds; i++) {
         values.cmd = offload_cmds[i];
 	ifr.ifr_data = (caddr_t) &values;
 	ioctl(skfd, SIOCETHTOOL, &ifr);
 
-        PyObject *k = PyUnicode_FromString(offload_names[i]);
-        PyObject *v = PyLong_FromUnsignedLongLong(values.data);
+        k = PyUnicode_FromString(offload_names[i]);
+        v = PyLong_FromUnsignedLongLong(values.data);
         PyDict_SetItem(d, k, v);
     }
 
     values.cmd = ETHTOOL_GFLAGS;
     ifr.ifr_data = (caddr_t) &values;
     ioctl(skfd, SIOCETHTOOL, &ifr);
-    PyObject * k = PyUnicode_FromString("lro");
-    PyObject * v = PyLong_FromUnsignedLongLong(0);
+    k = PyUnicode_FromString("lro");
+    v = PyLong_FromUnsignedLongLong(0);
     if (values.data & ETH_FLAG_LRO)
     {
         v = PyLong_FromUnsignedLongLong(1);
@@ -141,12 +169,6 @@ static PyObject * eth_stat(PyObject *self, PyObject *args)
     k = PyUnicode_FromString("queues_current_combined");
     v = PyLong_FromUnsignedLongLong(queuesinfo.combined_count);
     PyDict_SetItem(d, k, v);
-    
-    for (i = 0; i < n_stats; i++) {
-    	PyObject *k = PyUnicode_FromString((char *)&strings->data[i * ETH_GSTRING_LEN]);
-    	PyObject *v = PyLong_FromUnsignedLongLong(stats->data[i]);
-    	PyDict_SetItem(d, k, v);
-    }
 
     close(skfd);
 
