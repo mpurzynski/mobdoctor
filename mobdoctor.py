@@ -5,6 +5,25 @@ import glob
 import os.path
 import importlib
 
+RED = '\033[91m'
+ENDC = '\033[0m'
+GREEN = '\033[92m'
+
+# Some functions shamesly stolen from Justin Azoff's excellent bro-doctor
+# Actually, the whole idea as well
+
+def red(s):
+    return RED + s + ENDC
+
+def green(s):
+    return GREEN + s + ENDC
+
+def percent(a, b):
+    try :
+        return 100.0 * a / b
+    except ZeroDivisionError:
+        return 0.0
+
 def main():
     all_plugins = [
         importlib.import_module('plugins.%s' % os.path.basename(x)[:-3])
