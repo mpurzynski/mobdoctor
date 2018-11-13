@@ -1,0 +1,51 @@
+---
+checks:
+  invalid_checksum:
+    explanation: Number of packets with invalid checksum seen
+    effect: Packets with invalid checksum are ignored
+    todo: Make sure offloading is correctly disabled
+    stat: tcp.invalid_checksum
+  reassembly_gap:
+    explanation: Number of times the TCP engine could not find some parts of a TCP stream
+    effect: This might be because of a packet loss before the sensor (like on a span port), CPU overload or memory settings. Suricata might be missing alerts
+    todo: Troubleshoot packet loss, check the health of the TCP session reassembly
+    stat: tcp.reassembly_gap
+    config: reassembly_gap
+    green: 0
+    red: 1
+  emerg_mode_entered:
+    explanation: Number of times the TCP engine entered the emergency mode, after it ran out of a memory
+    effect: Emergency mode is entered is the flow engine runs out of memory .Suricata might be missing alerts
+    todo: Significantly increase the flow.memcap
+    stat: flow.emerg_mode_entered
+    config: flow.emerg_mode_entered
+    green: 0
+    red: 1
+  flow_memcap:
+    explanation: Number of times the flow engine could not allocate memory for a new flow and it had to force-timeout something to make a room
+    effect: Flows are not correctly tracked, Suricata is missing events
+    todo: Increase the flow.memcap
+    stat: flow.memcap
+    green: 0
+    red: 1
+  segment_memcap_drop:
+    explanation: Checking the health of the TCP session reassembly
+    effect: TCP sessions not properly processed for stream reassembly
+    todo: Increase the stream.memcap
+    stat: tcp.segment_memcap_drop
+    green: 0
+    red: 1
+  ssn_memcap_drop:
+    explanation: Checking the health of the TCP session reassembly
+    effect: TCP sessions not tracked at all
+    todo: Increase the stream.memcap
+    stat: tcp.ssn_memcap_drop
+    green: 0
+    red: 1
+  http_memcap:
+    explanation: Number of times the HTTP engine ran out of memory to analyze the HTTP session
+    effect: Missed alerts
+    todo: Increase the http.memcap
+    stat: http.memcap
+    green: 0
+    red: 1

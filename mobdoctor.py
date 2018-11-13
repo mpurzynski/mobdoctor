@@ -4,6 +4,7 @@
 import glob
 import os.path
 import importlib
+import yaml
 
 RED = '\033[91m'
 ENDC = '\033[0m'
@@ -25,9 +26,13 @@ def percent(a, b):
         return 0.0
 
 def main():
+    with open('config.yml', 'r') as f:
+        map = f.read()
+    yap = yaml.load(map)
+
     all_plugins = [
         importlib.import_module('plugins.%s' % os.path.basename(x)[:-3])
-        for x in glob.glob("plugins/*.py")
+        for x in sorted(glob.glob("plugins/*.py"))
         if os.path.isfile(x) and not x.endswith('__init__.py')
     ]
     plugin_list = [
@@ -37,11 +42,7 @@ def main():
 
     system_state = {}
     for plugin in plugin_list:
-        plugin_state = {}
-        plugin_state = plugin.do_check(plugin_state)
-        if plugin_state is not None:
-            plugin.reserved(plugin_state)
-
-
+        system_state = plugin.do_check(yap, system_state)
+    
 if __name__ == '__main__':
     main()
